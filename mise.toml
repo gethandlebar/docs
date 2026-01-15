@@ -1,0 +1,17 @@
+min_version = "2025.2.7"
+
+[settings]
+experimental = true
+# Use Bun to install packages instead of npm
+npm = { bun = true }
+
+[tools]
+bun = "1.2.10"
+node = "22.13.1"
+"npm:mint" = "latest"
+
+[env]
+_.file = ".env"
+
+[tasks.dev]
+run = "bunx mint dev"

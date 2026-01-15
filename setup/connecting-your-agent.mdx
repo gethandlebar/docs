@@ -1,0 +1,142 @@
+---
+title: 'Connecting your agent'
+description: 'How to enable Handlebar on your agents'
+---
+
+
+Connect Handlebar through framework-specific SDKs,
+which plug directly into agents however they're configured.
+Only a couple of simple lines of code are required to set Handlebar up,
+and no need to rewrite your agent, prompts, flow, or tools.
+
+## Agent Frameworks
+
+_We're actively developing our support for more AI and agent building frameworks.
+If you need support for tooling not listed here,
+please get in touch with us at [arjun@gethandlebar.com](mailto:arjun@gethandlebar.com)._
+
+Handlebar currently has deep support for the Vercel's `ai` SDK (JavaScript)
+and `google-adk` (Python).
+
+### Vercel AI
+
+**package:** `@handlebar/ai-sdk-v5`\
+**supported versions**: `>5.0.0` (including v6)
+
+The primary component of the Handlebar SDK is the `HandlebarAgent` class,
+which is a wrapper around Vercel's `Agent` (or `ExperimentalAgent` in Vercel v5).
+
+```diff ai-sdk-agent.ts
+- import { Agent } from "ai";
++ import { HandlebarAgent } from "@handlebar/ai-sdk-v5";
+
+- const myAgent = new Agent({
++ const myAgent = new HandlebarAgent({
+system,
+tools,
+});
+
+await myAgent.generate("Some user prompt");
+```
+
+Connect your agent to Handlebar by setting the `HANDLEBAR_API_KEY` environment variable
+to one of the keys you created on the platform.
+After that, you're good to go!
+Handlebar will automatically start sending audit logs
+(actions the agent is taking)
+to the Handlebar api.
+
+#### Agent identity
+
+Registering an agent identity will allow you to apply rules
+to specific agents.
+You can configure agent identity while initialising
+the `HandlebarAgent` class.
+
+```javascript ai-sdk-agent.ts
+import { HandlebarAgent } from "@handlebar/ai-sdk-v5";
+
+const myAgent = new HandlebarAgent({
+system,
+tools,
+agent: {
+		slug: "health-customer-agent",
+		description: "Answers patient queries about their health records", // Optional!
+		tags: ["health", "consumer"], // Optional! Tags can  for additional rule filtering
+	},
+});
+
+await myAgent.generate("Some user prompt");
+````
+
+#### Enduser identity
+
+It's often important to know which person/entity the agent is acting on behalf of,
+an "enduser" in Handlebar terms.
+You can provide unique identifiers for each of your users to Handlebar
+- typically this would be user IDs used within your system -
+- and Handlebar will attach the logs and agent actions to the enduser.
+This allows you to apply rules to specific endusers,
+or groups of endusers based on their metadata,
+and apply consequences such as lockdown to subgroups of your users.
+
+In the Handlebar SDK for Vercel AI,
+you can attach enduser information at runtime. 
+
+```javascript ai-sdk-agent.ts
+import { HandlebarAgent } from "@handlebar/ai-sdk-v5";
+
+const myAgent = new HandlebarAgent({
+system,
+tools,
+agent: {
+		slug: "health-customer-agent",
+		description: "Answers patient queries about their health records", // Optional!
+		tags: ["health", "consumer"], // Optional! Tags can  for additional rule filtering
+	},
+});
+
+await myAgent.generate(
+  "Some user prompt",
+  {
+		enduser: {
+			externalId: "your-enduser-id", // A unique identifier *you* give your users
+			metadata: { role: "patient", healthplan: "gold" }, // Optional! Metadata you need to segment and manage your users.
+		},
+	},);
+````
+
+
+## How the Handlebar SDKs work
+
+Handlebar provides SDKs which wrap the various agent building frameworks
+you know and love,
+providing agent governance with just a couple lines of code.
+
+### Audit logs
+
+The Handlebar SDKs monitor agent actions
+(e.g. user prompts, llm responses, tool calls, tool responses)
+and emits logs to the Handlebar API asynchronously.
+On Handlebar, the agent audit logs are **immutable**,
+presenting a source of truth for the actions your agent took.
+
+### Rules
+
+Rules, policies and interventions
+are currently configured
+on the Handlebar platform
+and loaded onto the SDK
+at runtime using your Handlebar API key
+and provided agent identity.
+
+Rules are evaluated client-side,
+making them fast, robust, and minimising data transfer.
+Rules are evaluated by intercepting tool calls
+the agent is attempting to make.
+If there is a violation, the SDK
+will exit the agent's tool call process
+or throw an error to finish the execution run completely,
+depending on what action is configured for the rule
+(e.g. `block` vs. `hitl`)
+and the specifics of the agent framework you're using.

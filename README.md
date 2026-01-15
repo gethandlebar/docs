@@ -1,3 +1,18 @@
+# Handlebar
+
+- [ ] What is Handlebar
+- [ ] Motivation / problem
+- [ ] Quickstart
+
+Product
+- [ ] Policies and rules
+- [ ] Interventions
+- [ ] Endusers
+
+How-to
+- [ ] Connecting your agent
+
+---
 # Mintlify Starter Kit
 
 Use the starter kit to get your docs deployed and ready to customize.
