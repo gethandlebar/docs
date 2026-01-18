@@ -1,0 +1,71 @@
+---
+title: "Actions"
+---
+
+Monitoring tells you what went wrong. Actions prevent it from happening.
+
+## Allow
+
+**Effect**: Tool call executes normally.
+
+**When to use**: Default action when no rules are violated.
+
+**Operational consequence**: Agent continues uninterrupted.
+
+---
+
+## Block
+
+**Effect**: Tool call is rejected. Agent receives a structured denial.
+
+**When to use**: Hard policy violations (e.g., accessing PHI without authorization).
+
+**Operational consequence**: Agent cannot execute the tool call. It must choose a different path or terminate.
+
+This is not a warning. This is a wall.
+
+---
+
+## Modify
+
+**Effect**: Tool call parameters are changed before execution.
+
+**When to use**: Enforcing data minimisation, redacting fields, constraining queries.
+
+**Example**: Agent requests `get_patient_record(patient_id=123, fields=["name", "ssn", "diagnosis"])` → Handlebar modifies to `fields=["name", "diagnosis"]` (removes SSN).
+
+**Operational consequence**: Agent gets only the data it requires. Compliant by default.
+
+---
+
+## Require Approval
+
+**Effect**: Tool call is paused pending human review.
+
+**When to use**: High-risk actions that need manual confirmation (e.g., external disclosures, financial transactions).
+
+**Operational consequence**: Agent waits. Human approves or denies. Decision is logged.
+
+This is your "break glass" moment.
+
+---
+
+## Kill Run
+
+**Effect**: Entire agent session is terminated immediately.
+
+**When to use**: Catastrophic violations (e.g., agent exhibits jailbreak behavior, attempts unauthorized system access).
+
+**Operational consequence**: Agent stops. All outputs are quarantined. Incident response begins.
+
+This is the nuclear option.
+
+---
+
+## Lockdown
+
+**Effect**: The user can not use the agent again or the tool is locked.
+
+**When to use**: Catastrophic failures that require code or agent updates. 
+
+**Operational consequence**: Agent stops, and cannot be used until relevant updates made, and approved by internal team.

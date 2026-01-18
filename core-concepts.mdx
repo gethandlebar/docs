@@ -1,0 +1,99 @@
+---
+title: "Core Concepts"
+description: "The elements you'll work with using Handlebar AI governance"
+---
+
+These concepts are deliberately simple. Most complexity in agent systems comes from unclear boundaries. We're strict about those boundaries.
+
+## Agents
+
+An **Agent** is any system that can:
+- Reason
+- Decide
+- Invoke tools
+
+Handlebar does not care how the agent is implemented (LLM, workflow engine, hand-written logic). We treat the agent as an external actor whose behaviour must be governed.
+
+**Agents are not trusted by default.**
+
+## Tools
+
+A **Tool** is any capability an agent can invoke:
+- API calls
+- Database queries
+- File access
+- Emails, messages, jobs, side effects
+
+**Tools are where agents touch the real world. That makes them the highest-risk surface.**
+
+In Handlebar, tools carry metadata:
+- What kind of data they touch
+- Who they affect
+- Whether they're reversible
+- Where outputs go
+
+This metadata is critical for rule evaluation.
+
+## Tool Calls
+
+A **Tool Call** is a specific invocation of a tool during a run.
+
+It includes:
+- Inputs
+- Context
+- Timing
+- Outcome (if allowed)
+
+**Tool calls are the primary decision points in the system.** Rules are evaluated before a tool call is executed.
+
+## Rules
+
+A **Rule** is a deterministic check evaluated against context.
+
+**Given the same inputs, a rule will always return the same result.**
+
+Rules can inspect:
+- Agent identity
+- Run context
+- Tool metadata
+- Tool call parameters
+- Historical signals
+
+**Rules are versioned. Old decisions can be replayed exactly.**
+
+## Actions
+
+An **Action** is the consequence of a rule evaluation.
+
+**Actions are hard, not advisory.** Examples:
+- Allow
+- Block
+- Modify inputs
+- Require approval
+- Kill a run
+- Lockdown
+
+**If an action blocks a tool call, the tool does not run. There is no bypass.**
+
+## Determinism 
+
+**The same inputs produce the same decisions.**
+
+This enables:
+- Replay
+- Debugging
+- Audits
+- Trust
+
+**If a decision can't be explained deterministically, it doesn't belong in the control path.**
+
+## Why This Matters
+
+In regulated environments, - "this is unlikely to happen" - isn't good enough.
+
+You need to be able to say:
+- This agent could not access this data under these conditions
+- This action was blocked for this reason
+- Here is the exact rule version that made that decision
+
+That's the bar for Handlebar.

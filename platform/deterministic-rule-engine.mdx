@@ -1,0 +1,93 @@
+---
+title: "Deterministic Rule Engine"
+description: "How Handlebar evaluates your policies for AI agents"
+---
+
+This is the core of Handlebar.
+
+If this part isn't solid, nothing else matters.
+
+## The Problem We're Solving
+
+Most agent governance systems rely on:
+- Probabilistic classifiers
+- Post-hoc analysis
+- Human review after damage is done
+
+That breaks down immediately in regulated environments.
+
+You cannot:
+- Explain probabilistic decisions to auditors
+- Replay historical decisions reliably
+- Enforce guarantees with systems that "usually" work
+
+**Handlebar's rule engine is intentionally boring.**
+
+**Rules are pure functions over explicit inputs.**
+
+## What Rules Can See
+
+Rules are evaluated at well-defined points (primarily before tool calls).
+
+They can inspect:
+- Agent identity
+- Run metadata
+- Tool identity and metadata
+- Tool call parameters
+- Organisation configuration
+- Historical signals (explicitly versioned)
+
+**If data is not explicitly available to a rule, it does not exist.**
+
+This constraint is intentional. It makes decisions explainable.
+
+## Rule Evaluation Lifecycle
+
+At runtime:
+1. An agent attempts a tool call
+2. Relevant rules are evaluated in a defined order
+3. Actions are produced
+4. Actions are enforced
+
+No retries. No best-effort. No silent fallbacks.
+
+## Ordering and Conflicts
+
+Rules are evaluated in a predictable order.
+
+When multiple rules apply:
+- Actions are composed deterministically
+- Conflicts are resolved explicitly
+
+For example:
+- A single block action wins over multiple allows
+- A require approval can short-circuit execution
+
+There is no "last rule wins" ambiguity.
+
+## Versioning and Replay
+
+Every rule has a version.
+
+When a decision is made, we record:
+- Rule IDs
+- Rule versions
+- Inputs
+- Outputs
+
+This allows:
+- Exact replay of historical decisions
+- Diffing behaviour across rule versions
+- Confident rule changes
+
+You can answer questions like:
+**"Would this run have been allowed under last month's rules?"**
+
+## Bottom Line
+
+The rule engine is the line you don't cross.
+
+Everything before it can be creative.
+Everything after it can be powerful.
+
+**The decision itself must be boring, predictable, and provable.**
