@@ -3,9 +3,9 @@
   "theme": "almond",
   "name": "Handlebar",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#674ea7",
+    "light": "#8363d4",
+    "dark": "#4d3a7e"
   },
   "favicon": "/favicon.svg",
   "navigation": {
@@ -43,10 +43,6 @@
         }
       ]
     }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
   },
   "navbar": {
     "links": [
