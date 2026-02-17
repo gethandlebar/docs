@@ -9,6 +9,22 @@ which plug directly into agents however they're configured.
 Only a couple of simple lines of code are required to set Handlebar up,
 and no need to rewrite your agent, prompts, flow, or tools.
 
+## Handlebar Platform
+
+Before you begin, make sure you have access to the Handlebar platform.
+You can sign up for a free account at [https://app.gethandlebar.com](https://app.gethandlebar.com).
+Handlebar is currently operating a waitlist.
+To get access, get in touch with us at [contact@gethandlebar.com](mailto:contact@gethandlebar.com)
+and we'll send you an invite code for you and your team.
+
+Once you have access,
+you will need to create an API key so that your agents can interact with the Handlebar API.
+Go to `/org/<your-org>/settings` (**Settings** button in the left sidebar),
+then click to create a new API key.
+**Important:** You won't be able to see the key again, so make sure to copy it somewhere safe.
+When setting up your agents (instructions below),
+you will need to set this key in the `HANDLEBAR_API_KEY` environment variable.
+
 ## Agent Frameworks
 
 _We're actively developing our support for more AI and agent building frameworks.
@@ -21,13 +37,13 @@ and `google-adk` (Python).
 ### Vercel AI
 
 **package:** `@handlebar/ai-sdk-v5`\
-**supported versions**: `>5.0.0` (including v6)
+**supported versions**: `^5.0.0` (v6 support is Work-in-progress)
 
 The primary component of the Handlebar SDK is the `HandlebarAgent` class,
-which is a wrapper around Vercel's `Agent` (or `ExperimentalAgent` in Vercel v5).
+which is a wrapper around Vercel's `Experimental_Agent`.
 
 ```diff ai-sdk-agent.ts
-- import { Agent } from "ai";
+- import { Experimental_Agent as Agent } from "ai";
 + import { HandlebarAgent } from "@handlebar/ai-sdk-v5";
 
 - const myAgent = new Agent({
@@ -62,7 +78,7 @@ tools,
 agent: {
 		slug: "health-customer-agent",
 		description: "Answers patient queries about their health records", // Optional!
-		tags: ["health", "consumer"], // Optional! Tags can  for additional rule filtering
+		tags: ["health", "consumer"], // Optional! Tags can be used  for additional rule filtering
 	},
 });
 
@@ -92,7 +108,7 @@ tools,
 agent: {
 		slug: "health-customer-agent",
 		description: "Answers patient queries about their health records", // Optional!
-		tags: ["health", "consumer"], // Optional! Tags can  for additional rule filtering
+		tags: ["health", "consumer"], // Optional! Tags can be used for additional rule filtering
 	},
 });
 
@@ -140,3 +156,13 @@ or throw an error to finish the execution run completely,
 depending on what action is configured for the rule
 (e.g. `block` vs. `hitl`)
 and the specifics of the agent framework you're using.
+
+## Viewing agent logs
+
+Once you've connected your agents to Handlebar,
+the next time it runs logs will be automatically be sent to the Handlebar platform.
+To view them,
+in the Handlebar platform head to the **Agents** page by clicking the button in the left sidebar,
+then select the agent you want to view logs for.
+You will see recent runs for that agent,
+which you can dive deeper into by clicking on the run.
