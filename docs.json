@@ -18,6 +18,13 @@
             "pages": ["overview", "core-concepts", "design-partner-program"]
           },
           {
+            "group": "How-to",
+            "pages": [
+              "setup/connecting-your-agent",
+              "setup/defining-agent-rules"
+            ]
+          },
+          {
             "group": "Platform",
             "pages": [
               "platform/deterministic-rule-engine",
@@ -26,10 +33,6 @@
               "platform/healthtech-governance-pack",
               "platform/finance-governance-pack"
             ]
-          },
-          {
-            "group": "How-to",
-            "pages": ["setup/connecting-your-agent"]
           }
         ]
       }

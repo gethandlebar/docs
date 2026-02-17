@@ -1,0 +1,74 @@
+---
+title: 'Agent Rules and Policies'
+description: 'Defining agent controls, their consequences, and applying them to agents'
+---
+
+Handlebar allows you to define deterministic rules
+to govern and control the behaviour of your agents
+as they interact with your systems through tool calling.
+Rules can operate on the tool input and output, the context history,
+enduser metadata, amongst other factors.
+Rules are evaluated client side by the Handlebar wrapper you configured
+on your agents (see [Connecting Your Agent](/setup/connecting-your-agent) if you've not done this yet).
+When a breach is detected,
+Handlebar will take the action you configured in your rule:
+
+- **Block**: stop the tool call from executing, but the agent run continues
+- **Allow**: permit the tool execution
+- **Human-in-the-loop review**: The agent run is exited and a review log is sent to your team on the Handlebar platform to review and approve or deny.
+
+## Defining rules
+
+### Key rules
+
+Handlebar provides quick rules for high-level controls users typically want to enforce on their agents:
+
+- Global usage limits (total cost or tokens) on an agent
+- Usage limits applied to each enduser
+
+To setup these rules, head to the **policies page** (`/org/<your-org>/policies`, or click **policies** in the left sidebar).
+Clicking on the button to create one of these key rules
+will open a modal to guide you through the process.
+You only need to define:
+
+- Which usage metric to limit (cost in USD or total tokens)
+- The time window over which to evaluate usage
+
+The quick rules automatically apply to all agents,
+and result in a blocked run if they are breached.
+
+Once configured,
+the next time your Handlebar-enabled agent runs,
+these rules will be loaded locally,
+evaluated and enforced.
+
+### Custom rule configuration
+
+Defining custom rules _on the Handlebar platform_ is WIP,
+however we have developed [Claude Code skills](https://github.com/gethandlebar/agent-skills)
+that assesses your agent codebase, identifies useful control policies to apply,
+and configures them via the Handlebar API.
+
+To use the skill, run
+```bash
+npx skills add gethandlebar/agent-skills
+```
+and execute the `/handlebar-rule-generation` skill.
+Once you've gone through the setup,
+your coding agent will POST the generated rules to the Handlebar API,
+which you will be able to view on the **Policies** page on the platform.
+
+Please note,
+this Claude Code skill is early in development.
+While we hope you find the output useful,
+some of the rules it generates might not be.
+We appreciate all feedback on Handlebar, Handlebar rules, and the agent skill:
+[please don't hesistate to talk to us](mailto:contact@gethandlebar.com)
+and share your thoughts.
+
+## Applying rules to policies
+
+Rules are agent agnostic: they simply define the evaluation criteria and the consequence.
+_Policies_ are groups of rules which are applied to agents via selectors.
+You can select agents by their slugs or user-defined tags (exact match or glob patterns).
+For example, a policy with a selector on slug `*` will apply its rules to all agents.
