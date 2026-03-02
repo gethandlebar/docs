@@ -7,6 +7,9 @@
     "light": "#8363d4",
     "dark": "#4d3a7e"
   },
+  "styling": {
+    "eyebrows": "breadcrumbs"
+  },
   "favicon": "/favicon.svg",
   "navigation": {
     "tabs": [
@@ -19,19 +22,14 @@
           },
           {
             "group": "How-to",
-            "pages": [
-              "setup/connecting-your-agent",
-              "setup/defining-agent-rules"
-            ]
+            "pages": ["setup/connecting-your-agent"]
           },
           {
             "group": "Platform",
             "pages": [
               "platform/deterministic-rule-engine",
               "platform/actions",
-              "platform/audit-compliance-evidence",
-              "platform/healthtech-governance-pack",
-              "platform/finance-governance-pack"
+              "platform/audit-compliance-evidence"
             ]
           }
         ]
@@ -40,8 +38,18 @@
     "global": {
       "anchors": [
         {
+          "anchor": "Platform",
+          "href": "https://app.gethandlebar.com",
+          "icon": "window"
+        },
+        {
+          "anchor": "Website",
+          "href": "https://gethandlebar.com",
+          "icon": "globe"
+        },
+        {
           "anchor": "Blog",
-          "href": "https://gethandlear.com/blog",
+          "href": "https://gethandlebar.com/blog",
           "icon": "newspaper"
         }
       ]
@@ -72,5 +80,8 @@
       "github": "https://github.com/gethandlebar",
       "linkedin": "https://linkedin.com/company/handlebar-ai"
     }
+  },
+  "metadata": {
+    "timestamp": true
   }
 }
