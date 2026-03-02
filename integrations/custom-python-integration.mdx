@@ -3,7 +3,7 @@ title: "Handlebar Integration with Python Agents"
 description: "Guide to integrating Handlebar governance into custom Python agents and frameworks not directly supported with a Handlebar client."
 ---
 
-For agents built without a directly supported framework, the `handlebar-core` package provides the
+For agents built without a directly supported framework, `handlebar-core` provides the
 primitives to wire governance into any agent loop.
 
 ## Prerequisites
@@ -16,6 +16,8 @@ primitives to wire governance into any agent loop.
 ```bash
 pip install handlebar-core
 ```
+
+
 
 ## How it fits into your agent
 
@@ -38,48 +40,90 @@ start_run
 end_run
 ```
 
-- **`start_run` / `end_run`** — bracket the entire agent invocation.  Handlebar uses these to group events and enforce run-level budgets.
+- **`start_run` / `end_run`** — bracket the entire agent invocation. Handlebar uses these to group all events and enforce run-level budgets.
 - **`before_llm` / `after_llm`** — record the messages sent to the model and the response (including token usage) for the audit log.
-- **`before_tool`** — evaluate the proposed tool call against your configured policies.  Returns a `Decision` that tells you whether to proceed, block, or stop the run.
+- **`before_tool`** — evaluate the proposed tool call against your configured policies. Returns a `Decision` that tells you whether to proceed, block, or stop the run.
 - **`after_tool`** — record the tool's result.
 
-## Basic integration
+
+
+## The client
+
+`HandlebarClient` is the top-level object that connects your agent to the Handlebar
+platform. It handles authentication, registers your agent, and manages the audit event
+stream.
+
+**Initialise it once at application startup** — not once per request or per run. The
+client is designed to be shared: it maintains a single connection to the platform and
+fans out events for all concurrent runs.
 
 ```python
-import asyncio
-from handlebar.core import (
-    Actor,
-    AgentDescriptor,
-    HandlebarClient,
-    HandlebarClientConfig,
-    LLMMessage,
-    LLMResponse,
-    ModelInfo,
-    RunConfig,
-    TokenUsage,
-)
-from handlebar.core.schema.governance import RunControl, Verdict
-
-# ---------------------------------------------------------------------------
-# 1. Initialise the client once at startup (shared across all runs).
-# ---------------------------------------------------------------------------
+from handlebar.core import HandlebarClient, HandlebarClientConfig, AgentDescriptor
 
 config = HandlebarClientConfig(
     agent=AgentDescriptor(slug="my-agent"),
+    # HANDLEBAR_API_KEY is read from the environment if api_key is not set here.
 )
-client = await HandlebarClient.init(config)   # HandlebarClient.init_sync(config) in sync code
+
+client = await HandlebarClient.init(config)
+```
+
+For sync code, use `init_sync`:
+
+```python
+client = HandlebarClient.init_sync(config)
+```
+
+`AgentDescriptor.slug` is the stable identifier for your agent on the Handlebar platform.
+It is how you match runs in the dashboard to a specific agent in your codebase. Use a
+short, unique, URL-safe string — e.g. `"travel-booking-agent"`.
 
 
-# ---------------------------------------------------------------------------
-# 2. Start a run at the beginning of each agent invocation.
-# ---------------------------------------------------------------------------
+
+## Runs
+
+A **run** represents one end-to-end invocation of your agent — from the first message in
+to the final response out. Everything that happens in between (LLM calls, tool calls,
+decisions) is attributed to that run in the audit log.
+
+Start a new run at the beginning of each invocation and end it when the agent finishes:
+
+```python
+from handlebar.core import RunConfig
 
 run = await client.start_run(RunConfig(run_id="unique-run-id"))
 
+# ... agent loop ...
 
-# ---------------------------------------------------------------------------
-# 3. Wrap every LLM call.
-# ---------------------------------------------------------------------------
+await run.end("success")   # "success" | "error" | "interrupted" | "timeout"
+```
+
+`run_id` must be unique per invocation. A UUID works well:
+
+```python
+from uuid import uuid4
+
+run = await client.start_run(RunConfig(run_id=str(uuid4())))
+```
+
+The `run` object is what you interact with throughout the agent loop. Hold a reference to
+it for the lifetime of the invocation — typically as a local variable in the function that
+runs your agent.
+
+
+## Agent lifecycle
+
+### Before LLM call
+
+```python
+run.before_llm(messages)
+```
+
+Call this before each call to the language model, passing the messages being sent. It emits `message.raw.created` audit events for each message, enabling full conversation logging on the platform.
+
+
+```python
+from handlebar.core import LLMMessage, LLMResponse, ModelInfo, TokenUsage
 
 # Before — pass the messages you are about to send.
 messages = [
@@ -90,8 +134,21 @@ await run.before_llm(messages)
 
 # ... call your LLM here ...
 llm_output = await my_llm.chat(messages)
+```
 
-# After — pass the response (model name + token usage where available).
+`before_llm` is optional - skipping it means conversation content won't appear in audit logs, but tool governance still works fully.
+
+### After LLM call
+
+```python
+run.after_llm(response)
+```
+
+Call this after the LLM responds. It logs the response content, records token usage for cost tracking, and emits an `llm.result` event.
+
+```python
+llm_output = await my_llm.chat(messages)
+
 await run.after_llm(
     LLMResponse(
         model=ModelInfo(name="gpt-4o", provider="openai"),
@@ -103,68 +160,100 @@ await run.after_llm(
         ),
     )
 )
+```
 
+Like `before_llm`, this is optional but enables token-based budget enforcement and spend tracking on the platform.
 
-# ---------------------------------------------------------------------------
-# 4. Gate every tool call.
-# ---------------------------------------------------------------------------
+### Before tool call
+
+```python
+run.before_tool
+```
+
+`before_tool` is where governance actually happens. It evaluates the proposed call against your configured rules. and returns a `Decision` indicating whether to allow or block the call.
+
+```python
+from handlebar.core.schema.governance import RunControl, Verdict
 
 decision = await run.before_tool(
     tool_name="book_flight",
     args={"destination": "Paris", "date": "2025-06-01"},
 )
 
-if decision.verdict == Verdict.BLOCK:
-    # Do not execute the tool. Surface the reason to the agent.
-    tool_result = {"error": f"Blocked: {decision.message}"}
-elif decision.control == RunControl.TERMINATE:
-    # Block the tool AND stop the run immediately.
+if decision.control == RunControl.TERMINATE:
+    # A policy has determined the run should stop entirely.
+    # Block this tool and do not make any further LLM or tool calls.
     tool_result = {"error": f"Blocked: {decision.message}"}
     await run.end("interrupted")
+
+elif decision.verdict == Verdict.BLOCK:
+    # This specific tool call is not allowed.
+    # Return an error to the agent so it can respond gracefully.
+    tool_result = {"error": f"Blocked: {decision.message}"}
+
 else:
     # Allowed — execute the tool.
     tool_result = await book_flight(destination="Paris", date="2025-06-01")
+```
 
-# Record the result regardless of whether it was blocked.
+The `Decision` shape:
+```python
+class Decision(_Base):
+    verdict: Verdict
+    control: RunControl
+    cause: DecisionCause
+    message: str
+    evaluated_rules: list[RuleEval] = Field(default_factory=list)
+    final_rule_id: str | None = None
+```
+
+**`BLOCK + CONTINUE`** means the tool should be skipped but the agent loop can continue - the blocked message is typically returned to the LLM so it can respond gracefully.
+
+**`BLOCK + TERMINATE`** means the run should stop entirely. Throw an error that propagates up through your agent loop, catch it at the top level, and call `run.end("interrupted")`.
+
+### After tool call
+
+```python
+run.after_tool
+```
+
+Call this after every tool invocation, regardless of success or failure. It logs the result and evaluates any `tool.after` rules (e.g. inspecting output content or checking data exfiltration patterns).
+
+```python
+tool_result = await tool_function_in_code(tool_args)
+
+# Always call after_tool, even when the tool was blocked.
 await run.after_tool(
     tool_name="book_flight",
     args={"destination": "Paris", "date": "2025-06-01"},
     result=tool_result,
 )
-
-
-# ---------------------------------------------------------------------------
-# 5. End the run when the agent finishes.
-# ---------------------------------------------------------------------------
-
-await run.end("success")   # "success" | "error" | "interrupted" | "timeout"
 ```
 
 ## Sync usage
 
-All async methods have a `_sync` counterpart for use outside an async context:
+Every async method has a `_sync` counterpart:
 
 ```python
-from handlebar.core import HandlebarClient, HandlebarClientConfig, AgentDescriptor
-
-client = HandlebarClient.init_sync(config)
-run    = client.start_run_sync(RunConfig(run_id="unique-run-id"))
-
+client   = HandlebarClient.init_sync(config)
+run      = client.start_run_sync(RunConfig(run_id=str(uuid4())))
 decision = run.before_tool_sync("book_flight", {"destination": "Paris"})
-
 run.end_sync("success")
 ```
 
-## Tool tags
+## Additional config
 
-Tags let you group tools by function so that governance rules apply to the whole category
+### Tool tags
+
+Tags let you group tools by function so governance rules apply to the whole category
 rather than individual tool names. For example:
 
-- Rate-limit all `"search"` tools regardless of which search API they use
-- Block data exfiltration by preventing any `"pii-read"` result flowing into an `"external"` tool
+- Rate-limit all `"search"` tools regardless of which search API they call
+- Block data exfiltration by preventing a `"pii-read"` result flowing into an `"external"` tool
 - Require human review before any `"write"` action
 
-Register tags when you configure the client:
+Register tags when you configure the client, and Handlebar will look them up automatically
+each time `before_tool` is called:
 
 ```python
 from handlebar.core import HandlebarClientConfig, AgentDescriptor, Tool
@@ -180,11 +269,7 @@ config = HandlebarClientConfig(
 )
 ```
 
-Tags registered here are looked up automatically each time `before_tool` is called —
-you do not need to pass them at call time.
-
-Alternatively, pass tags directly on each `before_tool` call (useful when the tag set
-varies per invocation or is determined at runtime):
+If the tag set for a tool varies per invocation, pass tags directly at call time instead:
 
 ```python
 decision = await run.before_tool(
@@ -194,13 +279,13 @@ decision = await run.before_tool(
 )
 ```
 
-## End-user / actor configuration
+### End-user / actor configuration
 
 Attach the identity of the end-user to the run so that Handlebar can:
 
-- Enforce **per-user budgets** (e.g. each user gets 100 tool calls per day)
+- Enforce **per-user budgets** — e.g. each user gets a fixed number of tool calls or tokens per day
 - Attribute every audit event to a specific user
-- Apply **per-user rules** (e.g. only allow certain tools for certain user roles)
+- Apply **per-user rules** — e.g. restrict which tools a given user role can invoke
 
 Pass the actor when starting the run:
 
@@ -209,21 +294,21 @@ from handlebar.core import Actor, RunConfig
 
 run = await client.start_run(
     RunConfig(
-        run_id="unique-run-id",
-        actor=Actor(external_id="user_abc123"),   # your app's user identifier
-        session_id="session_xyz",                  # groups runs in the same conversation
+        run_id=str(uuid4()),
+        actor=Actor(external_id="user_abc123"),   # your app's identifier for this user
+        session_id="session_xyz",                  # groups runs from the same conversation
     )
 )
 ```
 
 `external_id` can be any stable identifier your application uses — a database ID, a UUID,
-an email address, etc.  Handlebar stores this opaquely and uses it to aggregate usage and
+an email address, etc. Handlebar stores it opaquely and uses it to aggregate usage and
 enforce per-user policies.
 
 `session_id` is optional but recommended when an agent can be invoked multiple times
 within a single user session — it lets the platform group related runs together.
 
-## Additional config
+### Misc options
 
 ```python
 from handlebar.core import HandlebarClientConfig, AgentDescriptor, ConsoleSinkConfig
@@ -234,14 +319,13 @@ config = HandlebarClientConfig(
         name="My Agent",
         description="Books travel and manages calendars",
     ),
-    enforce_mode="enforce",    # "enforce" | "shadow" | "off"
-    fail_closed=False,         # True = block all tool calls if Handlebar API is unreachable
-    sinks=[ConsoleSinkConfig(format="pretty")],  # log governance events to the console instead of the Handlebar platform
+    enforce_mode="enforce",   # "enforce" | "shadow" | "off"
+    fail_closed=False,        # True = block all tool calls if Handlebar API is unreachable
 )
 ```
 
 | `enforce_mode` | Behaviour |
-|---|---|
+|:---:|:----|
 | `"enforce"` | Governance decisions are applied — blocked tools are stopped |
 | `"shadow"` | Decisions are evaluated and logged but never enforced |
 | `"off"` | No API calls; pass-through only |
