@@ -36,6 +36,24 @@ These core packages can be plugged into the lifecycle of your agent, for any fra
 
 Handlebar additionally provides out-of-the-box integrations with popular frameworks like Vercel AI and Google Assistant, which require only a few lines of configuration in code.
 
+### Claude code skill to setup Handlebar
+
+We've provided a Claude Code skill that will analyse your agent and configure Handlebar for you.
+Simply run
+
+```bash
+npx skills add gethandlebar/agent-skills
+```
+
+and run the `/handlebar-setup` skill while in your agent's codebase to get started.
+
+N.b. you can find our agent skills at https://github.com/gethandlebar/agent-skills
+
+### Framework integration guides
+
+Read more about how to integrate Handlebar with your agent in one of the following guides.
+Note that Handlebar currently only support JS/TS and Python agents.
+
 <Columns cols={2}>
   <Card
     title="Vercel AI" 
