@@ -1,0 +1,117 @@
+---
+title: 'Connecting Vercel `ai` Agents'
+description: 'Plug Handlebar into Vercel agents in minutes'
+---
+
+Handlebar provides drop-in wrappers for the `Agent` classes provided by Vercel's `ai` SDK.
+The signature of this class has evolved between major `ai` versions (5 -> 6);
+as a result, Handlebar provides different client packages to support the different major versions
+of `ai`.
+
+- [`ai` v5](#v5)
+- [`ai` v6](#v6)
+
+## Prerequisites
+
+- A [Handlebar account][platform]
+- Handlebar API key (created on the platform)
+
+## v5
+
+**package:** `@handlebar/ai-sdk-v5`\
+**supported versions**: `^5.0.0`
+
+### Basic setup
+
+The primary component of the Handlebar SDK is the `HandlebarAgent` class,
+which is a wrapper around Vercel's `Experimental_Agent`.
+
+```diff ai-sdk-agent.ts
+- import { Experimental_Agent as Agent } from "ai";
++ import { HandlebarAgent } from "@handlebar/ai-sdk-v5";
+
+- const myAgent = new Agent({
++ const myAgent = new HandlebarAgent({
+system,
+tools,
+});
+
+await myAgent.generate("Some user prompt");
+```
+
+Connect your agent to Handlebar by setting the `HANDLEBAR_API_KEY` environment variable
+to one of the keys you created on the platform.
+After that, you're good to go!
+Handlebar will automatically start sending audit logs
+(actions the agent is taking)
+to the Handlebar api.
+
+### Agent identity
+
+Registering an agent identity will allow you to apply rules
+to specific agents.
+You can configure agent identity while initialising
+the `HandlebarAgent` class.
+
+```javascript ai-sdk-agent.ts
+import { HandlebarAgent } from "@handlebar/ai-sdk-v5";
+
+const myAgent = new HandlebarAgent({
+system,
+tools,
+agent: {
+		slug: "health-customer-agent",
+		description: "Answers patient queries about their health records", // Optional!
+		tags: ["health", "consumer"], // Optional! Tags can be used  for additional rule filtering
+	},
+});
+
+await myAgent.generate("Some user prompt");
+```
+
+### Enduser identity
+
+It's often important to know which person/entity the agent is acting on behalf of,
+an "enduser" in Handlebar terms.
+You can provide unique identifiers for each of your users to Handlebar
+- typically this would be user IDs used within your system -
+- and Handlebar will attach the logs and agent actions to the enduser.
+This allows you to apply rules to specific endusers,
+or groups of endusers based on their metadata,
+and apply consequences such as lockdown to subgroups of your users.
+
+In the Handlebar SDK for Vercel AI,
+you can attach enduser information at runtime. 
+
+```javascript ai-sdk-agent.ts
+import { HandlebarAgent } from "@handlebar/ai-sdk-v5";
+
+const myAgent = new HandlebarAgent({
+system,
+tools,
+agent: {
+		slug: "health-customer-agent",
+		description: "Answers patient queries about their health records", // Optional!
+		tags: ["health", "consumer"], // Optional! Tags can be used for additional rule filtering
+	},
+});
+
+await myAgent.generate(
+  "Some user prompt",
+  {
+		enduser: {
+			externalId: "your-enduser-id", // A unique identifier *you* give your users
+			metadata: { role: "patient", healthplan: "gold" }, // Optional! Metadata you need to segment and manage your users.
+		},
+	},);
+```
+
+## v6
+
+_Suppoert for Vercel AI v6 is coming soon!_
+
+---
+
+_Please email `contact@gethandlebar.com` to report security issues relating to Handlebar and client packages._
+
+[platform]: https://app.gethandlebar.com

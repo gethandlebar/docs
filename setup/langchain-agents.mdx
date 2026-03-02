@@ -1,0 +1,396 @@
+---
+title: 'Connecting Langchain Agents'
+description: 'Plug Handlebar into Langchain agents, in both Python and JavaScript'
+---
+
+Handlebar has direct support for Langchain Agents with drop-in middlewares.
+
+- [Python agents](#python)
+- [Javascript agents](#javascript)
+
+## Prerequisites
+
+- A [Handlebar account][platform]
+- Handlebar API key (created on the platform)
+
+## Python
+
+**Package**: `handlebar-langchain`\n
+**Supports**: `langchain >= 1.0.0`\n
+**Supports Python**: `>= 3.11`
+**Codebase**: https://github.com/gethandlebar/handlebar-python
+**Bugs, issues, feature requests**: https://github.com/gethandlebar/handlebar-python/issues
+
+### Install
+
+```bash
+pip install handlebar-langchain langchain
+```
+
+### Quick setup
+
+Set your API key in the environment and pass the middleware when creating your agent:
+
+```python
+import os
+os.environ["HANDLEBAR_API_KEY"] = "<your platform API key>"
+
+from langchain.agents import create_agent
+from langchain_core.tools import tool
+from handlebar.langchain import HandlebarMiddleware
+
+@tool
+def get_weather(city: str) -> str:
+    """Get current weather for a city."""
+    return f"Sunny in {city}!"
+
+middleware = HandlebarMiddleware(agent_slug="my-agent")
+
+agent = create_agent(
+    model="openai:gpt-5",
+    tools=[get_weather],
+    middleware=[middleware],
+)
+
+result = agent.invoke({"messages": [{"role": "user", "content": "What's the weather in SF?"}]})
+```
+
+That's it. Every LLM call and tool invocation is now governed and audited.\
+You can view your agent runs and configure rules on the [Handlebar platform][platform].
+
+### Async usage
+
+The middleware supports async agents with no extra configuration:
+
+```python
+result = await agent.ainvoke({"messages": [{"role": "user", "content": "What's the weather in SF?"}]})
+```
+
+### Additional config
+
+```python
+from handlebar.core import AgentDescriptor, ConsoleSinkConfig
+from handlebar.langchain import HandlebarMiddleware
+
+middleware = HandlebarMiddleware(
+    agent=AgentDescriptor(
+        slug="my-agent",
+        name="My Agent",
+        description="Does useful things",
+    ),
+    enforce_mode="enforce",   # "enforce" | "shadow" | "off"
+    fail_closed=False,        # True = block all tool calls if Handlebar API is unreachable
+)
+```
+
+| `enforce_mode` | Behaviour |
+|---|---|
+| `"enforce"` | Governance decisions are applied — blocked tools are stopped |
+| `"shadow"` | Decisions are evaluated and logged but never enforced |
+| `"off"` | No API calls; pass-through only |
+
+### End-user information
+
+Pass the end-user's identity so Handlebar can enforce per-user budgets and attribute audit events correctly:
+
+```python
+from handlebar.core import Actor
+from handlebar.langchain import HandlebarMiddleware
+
+middleware = HandlebarMiddleware(
+    agent_slug="my-agent",
+    actor=Actor(external_id="user_123"),
+    session_id="session_456",
+)
+```
+
+`external_id` should be whatever identifier your application uses for the user (database ID, email, etc.).\
+`session_id` groups multiple agent invocations that belong to the same conversation.
+
+### Tool tags
+
+Tag your tools so governance rules can match on them. This unlocks policies such as:
+
+- Rate-limiting expensive or high-risk tool categories
+- Blocking data exfiltration — e.g. preventing a `pii_read` result flowing into an `external` tool
+- Requiring human review before `write` actions
+
+Pass tags via the `metadata` argument on the `@tool` decorator:
+
+```python
+from langchain_core.tools import tool
+
+@tool(metadata={"handlebar_tags": ["email", "external-comms"]})
+def send_email(to: str, subject: str, body: str) -> str:
+    """Send an email to a recipient."""
+    ...
+
+@tool(metadata={"handlebar_tags": ["database", "write"]})
+def update_record(table: str, id: str, data: dict) -> str:
+    """Update a record in the database."""
+    ...
+```
+
+### With a pre-initialised client
+
+If you want to share one client across multiple agents (one connection, one audit stream):
+
+```python
+from handlebar.core import HandlebarClient, HandlebarClientConfig, AgentDescriptor
+from handlebar.langchain import HandlebarMiddleware
+
+config = HandlebarClientConfig(agent=AgentDescriptor(slug="my-agent"))
+
+# Async context
+client = await HandlebarClient.init(config)
+
+# Sync context
+client = HandlebarClient.init_sync(config)
+
+middleware = HandlebarMiddleware(client=client)
+```
+
+### What happens on a block
+
+When a governance rule blocks a tool call:
+
+- The tool does **not** execute.
+- The agent receives a `ToolMessage` with content `"Blocked by Handlebar governance: <reason>"` as the tool result.
+- If the rule carries a `TERMINATE` control signal, the next model call is also intercepted — a synthetic `AIMessage` is returned instead and the agent loop ends cleanly.
+- The run is ended with status `"interrupted"` and all events are flushed to the audit log.
+
+
+## Javascript
+
+**Package**: `@handlebar/langchain`\n
+**Supports**: `@langchain/core@^1.1.27`
+
+The `@handlebar/langchain` adapter wraps any LangChain `Runnable` with full Handlebar governance - run lifecycle, LLM event logging, and tool-call enforcement.
+
+`HandlebarAgentExecutor` extends LangChain's `Runnable`, so it can be composed in chains via `.pipe()` and passed anywhere a `Runnable` is expected.
+
+### Installation
+
+```bash
+npm install @handlebar/langchain @langchain/core
+```
+
+### Quick start
+
+```ts
+import { Handlebar, HandlebarAgentExecutor, wrapTools } from "@handlebar/langchain";
+import { ChatOpenAI } from "@langchain/openai";
+import { AgentExecutor, createOpenAIToolsAgent } from "langchain/agents";
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { DynamicStructuredTool } from "@langchain/core/tools";
+import { z } from "zod";
+
+// 1. Init client once (e.g. at server startup).
+const hb = await Handlebar.init({
+  apiKey: process.env.HANDLEBAR_API_KEY,
+  agent: { slug: "my-agent" },
+});
+
+// 2. Define your tools normally.
+const searchTool = new DynamicStructuredTool({
+  name: "search",
+  description: "Search the web for information",
+  schema: z.object({ query: z.string() }),
+  func: async ({ query }) => fetchSearchResults(query),
+});
+
+// 3. Wrap tools with governance hooks BEFORE building the agent.
+//    wrapTools() mutates the tool instances in place and returns the same array.
+const tools = wrapTools([searchTool], {
+  toolTags: { search: ["read-only"] },
+});
+
+// 4. Build the agent and executor as normal.
+const llm = new ChatOpenAI({ model: "gpt-4o" });
+const prompt = ChatPromptTemplate.fromMessages([
+  ["system", "You are a helpful assistant."],
+  ["human", "{input}"],
+  ["placeholder", "{agent_scratchpad}"],
+]);
+const agent = await createOpenAIToolsAgent({ llm, tools, prompt });
+const executor = AgentExecutor.fromAgentAndTools({ agent, tools });
+
+// 5. Wrap the executor with HandlebarAgentExecutor.
+const hbExecutor = new HandlebarAgentExecutor({
+  hb,
+  agent: executor,
+  model: { name: "gpt-4o", provider: "openai" },
+});
+
+// 6. Invoke per request. Handlebar options go in `configurable`.
+const result = await hbExecutor.invoke(
+  { input: "What is the capital of France?" },
+
+  // Optional invocation-time configuration
+  { configurable: {
+    actor: { externalId: "user-123" }, // actor/enduser allows you to enforce per-user rules
+    sessionId: "session-abc" } // Link separate runs to the same session to get full session analytics
+  },
+);
+console.log(result.output);
+```
+
+### How it works
+
+#### Run lifecycle
+
+`HandlebarAgentExecutor.invoke()` creates a new `Run` for each call:
+
+1. `run.started` - emitted immediately on `startRun()`.
+2. LLM and tool hooks fire during the agent loop (see below).
+3. `run.ended` - emitted on completion, error, or governance termination; the event bus is flushed before returning.
+
+#### Tool governance (`wrapTools`)
+
+`wrapTools()` intercepts each tool's `invoke()` method in place. On each tool call:
+
+- `run.beforeTool(name, args, tags)` is called first - evaluates governance rules.
+- **ALLOW** → proceeds with normal execution; `run.afterTool(...)` is called after.
+- **BLOCK + CONTINUE** → skips execution; returns a JSON-encoded blocked message so the LLM can respond gracefully.
+- **BLOCK + TERMINATE** → throws `HandlebarTerminationError`; `HandlebarAgentExecutor` catches it and ends the run with status `"interrupted"`.
+
+#### LLM event logging (`HandlebarCallbackHandler`)
+
+`HandlebarAgentExecutor` automatically attaches a `HandlebarCallbackHandler` to each `executor.invoke()` call. It bridges LangChain's callback system to Handlebar's hooks:
+
+| LangChain callback        | Handlebar hook        | Notes                                                              |
+|---------------------------|-----------------------|--------------------------------------------------------------------|
+| `handleChatModelStart`    | `run.beforeLlm`       | Delta-tracked - only new messages emitted per step                 |
+| `handleLLMEnd`            | `run.afterLlm`        | Extracts text, tool calls, and token usage from `LLMResult`        |
+
+Delta tracking ensures that on multi-step agent loops (where LangChain accumulates the full message history), only messages new since the last LLM call are forwarded to `run.beforeLlm`. This prevents duplicate `message.raw.created` events.
+
+### API reference
+
+#### `wrapTools(tools, opts?)`
+
+Wraps an array of LangChain tools with Handlebar governance hooks. Mutates tool instances in place; returns the same array.
+
+```ts
+const tools = wrapTools([searchTool, codeTool], {
+  toolTags: {
+    search: ["read-only"],
+    code_executor: ["execution"],
+  },
+});
+```
+
+#### `wrapTool(tool, tags?)`
+
+Wraps a single tool. Use when you need to wrap tools individually.
+
+#### `HandlebarAgentExecutor`
+
+Extends LangChain's `Runnable` - composable in chains and usable anywhere a `Runnable` is expected.
+
+Handlebar-specific options are passed via `RunnableConfig.configurable`, which LangChain propagates automatically through `.pipe()` chains.
+
+```ts
+const hbExecutor = new HandlebarAgentExecutor({
+  hb,                                        // HandlebarClient from Handlebar.init()
+  executor,                                  // AgentExecutor or any Runnable
+  model: { name: "gpt-4o", provider: "openai" },
+  runDefaults: { runTtlMs: 60_000 },         // optional: applied to every run
+});
+
+// Direct invocation
+const result = await hbExecutor.invoke(
+  { input: "..." },
+  {
+    configurable: {
+      actor: { externalId: "user-123" },     // optional
+      sessionId: "session-abc",              // optional: groups runs into a session
+      tags: { environment: "production" },   // optional: arbitrary run tags
+    },
+  },
+);
+
+// In a .pipe() chain - configurable propagates automatically
+const chain = preprocess.pipe(hbExecutor).pipe(postprocess);
+const result = await chain.invoke(
+  { input: "..." },
+  { configurable: { actor: { externalId: "user-123" } } },
+);
+
+// Or wrap it with your own Runnable - it satisfies the interface
+class MyMonitoringWrapper extends Runnable<...> {
+  constructor(private inner: Runnable<...>) { super(); }
+  async invoke(input, config) { return this.inner.invoke(input, config); }
+}
+const monitored = new MyMonitoringWrapper(hbExecutor);
+```
+
+#### `HandlebarCallbackHandler`
+
+If you need the callback handler standalone (e.g. to attach to a chain rather than an executor):
+
+```ts
+import { HandlebarCallbackHandler } from "@handlebar/langchain";
+import { withRun } from "@handlebar/core";
+
+const run = await hb.startRun({ runId: uuidv7(), model: { name: "gpt-4o" } });
+const handler = new HandlebarCallbackHandler(run, { name: "gpt-4o", provider: "openai" });
+
+await withRun(run, async () => {
+  const result = await chain.invoke({ input: "..." }, { callbacks: [handler] });
+  await run.end("success");
+  return result;
+});
+```
+
+#### `HandlebarTerminationError`
+
+Thrown by a wrapped tool when a `BLOCK + TERMINATE` governance decision is made. `HandlebarAgentExecutor` catches this automatically and ends the run with `"interrupted"`. If you are managing the run lifecycle manually, catch it yourself:
+
+```ts
+try {
+  const result = await executor.invoke(input, { callbacks: [handler] });
+  await run.end("success");
+} catch (err) {
+  await run.end(err instanceof HandlebarTerminationError ? "interrupted" : "error");
+  throw err;
+}
+```
+
+#### Actor schema
+
+You can optionally tell Handlebar which enduser the agent is acting on behalf of.
+This allows you to enforce user-level rules (e.g. a user cost cap) and run analytics on endusers.
+
+In addition to providing the "externalId" (your ID for the enduser), you can define a group the enduser belongs to and attach metadata.\
+Enduser metadata allows you to enforce rules on groups of users. For example, you might want to enforce stricter data controls on users tagged "eu".
+
+The Handlebar platform will register the enduser metadata once it's provided,
+so it is not necessary to provide it on every single run.
+Alternatively, you can configure enduser metadata on the platform itself.
+
+The full actor schema is:
+```js
+actor?: {
+  externalId: string,
+  name?: string,
+  metadata?: Record<string, string>,
+  group?: {
+    externalId: string,
+    name?: string,
+    metadata?: Record<string, string>
+  }
+}
+```
+
+### Limitations
+
+- **`handleToolStart` cannot block**: LangChain's callback system is observational - callbacks fire around tool execution but cannot intercept it. Tool wrapping via `wrapTools()` / `wrapTool()` is required to enforce `BLOCK` decisions.
+- **Chat models only**: `HandlebarCallbackHandler` uses `handleChatModelStart`, which fires for chat models (`ChatOpenAI`, etc.). Plain completion LLMs use `handleLLMStart` (prompts as strings); these are not currently converted to `message.raw.created` events.
+- **Single batch assumed**: For batched LLM calls (`messages: BaseMessage[][]`), only the first batch (`messages[0]`) is forwarded to `run.beforeLlm`. Batched inference is uncommon in agent loops.
+
+---
+
+_Please email `contact@gethandlebar.com` to report security issues relating to Handlebar and client packages._
+
+[platform]: https://app.gethandlebar.com
